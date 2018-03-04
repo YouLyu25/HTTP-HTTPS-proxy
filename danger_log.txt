@@ -1,0 +1,104 @@
+This is the danger log for ERSS homework assignment 2.
+Also, the file explains how exceptions will be handled in this proxy program.
+
+For the HTTP proxy, danger may mainly com from three parts:
+the client side, the proxy itself as well as the server's side.
+
+By stating dangerous, here we include both danger operations and malformed
+request as well as possible danger cases which may happen.
+
+
+
+- For the client side, there are multiple aspects of dangers and exceptions:
+
+1. The client may send bad requests, i.e. malformed requests to the proxy
+and the proxy may not now how to handle the requests. For such situation,
+we check the format of the requests, if it is incorrect, the proxy will
+send back a 400 Bad Request response to the client directly without forwarding
+the request to the server.
+If the client send a request but the proxy find that the server stated in
+the request cannot be found, it will send back a 404 Not Found response to
+the client directly without forwarding the request to the server.
+
+2. Many clients may try to use different protocol like FTP, for these cases,
+the proxy will handle these requests as 404 or 400, and directly responses
+the client without forward the request to the server.
+
+3. There may be tons of clients connecting at the same time, or some really
+bad clients may try to connect to some server that will response very slowly
+or will not response at all. Similar operations will considerablly take a large
+amount of resources of proxy server. For example, if there are many threads
+existing, and many of them are waiting for the server to send back some data
+(as suspecting above, some server may not response or response slowly), the
+overall performance of the proxy may be blighted, also the stack and other
+resources of threads will still be taken and not be recycled on time. There
+may even be stack overflow on the proxy server as many responses can be quite
+large...
+
+In order to handle such situation and improve the robustness of our proxy,
+we add a TIME_OUT macro to our program which when set to 1 (default is 0),
+will close some connections which does not close for a specific time. The
+administrator of this proxy can also set the time he/she wants the connection
+to be closed by setting HTTPS_TIMEOUT and/or HTTP_TIMEOUT to a specific value.
+
+Also, in our implementation, we use pthread_detach() everytime a thread is
+created (each new accepted connection to the proxy will create a new thread).
+By doing this, the resource of each thread will be recycled everytime the thread
+exits and the main thread do not have to collect the resources.
+
+
+
+- For the proxy side, some major dangers and exceptions may be:
+
+1. There may be some unexpected exceptions happen during the execution of
+program. Generally, we "try" to excecute the main thread and "catch" any
+exception, the error information will be printed and the main thread will
+close any file descriptors and exit. We decided to do this as if there is
+anything wrong with the main thread, the complete proxy may not function normally.
+The connection may not be accepted, new thread may not be created and the
+proxy will be under undeterministic status.
+
+2. There may be some unexpected exceptions happen during the execution of
+each thread. For example, the thread's stack or the cache may overflow. To
+handle such exceptions, we "try" and "catch" for the store operation, if there
+is any "bad_alloc" exception, we catch it, print the error message and then exit
+the thread. Also, for the operations like receving data and storing it (e.g.
+receive request and response, we "try" to "catch" the bad_alloc exception, print
+error log and then exit thread to recycle the thread's cycle. Specifically, we do
+that when the "resize()" method is used by our data_buff when the initial size of
+data_buff is not enough.
+
+In addition to that, the administrator can change the stack size reserved for each
+thread by changing MAX_NUM macro.
+
+
+
+3. For multi-thread program, data race may happen. To address this issue, we
+use mutex lock to ensure the thread safety. We lock everytime the cache is accessed,
+i.e. store and fetch data, we also lock everytime the unique id for each thread
+is accumulated. We put the file descriptor of each newly accepted connection from
+the clients into a queue and each thread will get a file descriptor and handle it.
+We lock before the file descriptor is popped and enqued (i.e. when the queue is
+modified). The program also supports single thread, set MULTI_THREAD macro to 0
+can make the proxy run in a single thread. Note that if there is CONNECT request,
+a tunnle will be created, so the proxy may have to handle the traffic for that so
+until the connection is closed, other request will be blocked.
+
+
+
+
+- For the server side, possible exceptions and dangers may be:
+
+1. Server does not send data but the connection has been built for a relatively long
+time. For handling such dangers (as considerably resources will be taken), we use
+the TIME_OUT method as stated above to close expired connections.
+
+
+2. Server response with some garbage or server experienced corruption/sudden shutdown.
+For such situation, we will check if the response received is valid, i.e. if the
+response is in the form of "HTTP/1.1 XXX" or "HTTP/1.0 XXX", if not, the proxy will
+treat the response as invalid and return a 502 Bad Gateway response to the client.
+
+If the recv() call returns something less than 0, the proxy will treat it as time out
+and return the client with a 504 Gateway Timeout response.
+

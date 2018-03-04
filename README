@@ -1,0 +1,5 @@
+To run the program, simply do:
+sudo docker-compose up
+
+The proxy folder contains the .cpp file which is the source code of
+our proxy, the Makefile as well as the Dockerfile.
